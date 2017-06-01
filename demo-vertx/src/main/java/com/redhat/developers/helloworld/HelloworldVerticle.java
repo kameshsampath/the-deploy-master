@@ -3,7 +3,7 @@
  * Copyright 2016, Red Hat, Inc. and/or its affiliates, and individual
  * contributors by the @authors tag. See the copyright.txt in the
  * distribution for a full listing of individual contributors.
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,100 +16,148 @@
  */
 package com.redhat.developers.helloworld;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-
-import org.apache.commons.lang3.text.StrSubstitutor;
-import org.infinispan.Cache;
-
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.core.VertxOptions;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.spi.cluster.ClusterManager;
+import io.vertx.ext.cluster.infinispan.InfinispanClusterManager;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.CorsHandler;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.text.StrSubstitutor;
+import org.infinispan.Cache;
+import org.infinispan.manager.DefaultCacheManager;
 
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@Slf4j
 public class HelloworldVerticle extends AbstractVerticle {
 
-	private static final String version = "1.0";
-	private Logger logger = LoggerFactory.getLogger(HelloworldVerticle.class);
-	private final String hostname = System.getenv().getOrDefault("HOSTNAME", "unknown");
+    private static final String version = "1.0";
+    private static final String CACHE_NAME = "helloWorld";
 
-	@Override
-	public void start() throws Exception {
+    private final String hostname = System.getenv().getOrDefault("HOSTNAME", "unknown");
 
-		vertx.executeBlocking(future -> {
-			// Force start of Infinispan
-			CacheInstance.getCache();
-			future.complete();
-		}, ar -> {
-			ar.result();
-		});
+    @Override
+    public void start(Future<Void> fut) throws Exception {
 
-		Router router = Router.router(vertx);
+        //Create Cache Manager - this needs to be blocking as there no way now to execute it async
+        vertx.executeBlocking(future -> {
+            try {
+                DefaultCacheManager defaultCacheManager = new DefaultCacheManager("infinispan-vertx.xml");
+                future.complete(defaultCacheManager);
+            } catch (IOException e) {
+                log.error("Error configuring Infinispan Cache Manager", e);
+                future.fail(e);
+            }
+        }, asyncResult -> {
 
-		// Config CORS
-		router.route().handler(CorsHandler.create("*").allowedMethod(HttpMethod.GET).allowedHeader("Content-Type"));
+            if (asyncResult.succeeded()) {
 
-		// hello endpoint
-		router.get("/api/hello/:name").handler(ctx -> {
-			String helloMsg = hello(ctx.request().getParam("name"));
-			logger.info("New request from " + ctx.request().getHeader("User-Agent") + "\nSaying...: " + helloMsg);
-			ctx.response().end(helloMsg);
-		});
+                log.info("Configured Infinispan as vert.x Cluster Manager");
 
-		// Add Stuff
-		router.get("/api/addstuff").handler(ctx -> {
-			String name = ctx.request().getParam("name");
-			if (name == null) {
-				ctx.response().end("Missing name parameter");
-			} else {
-				Cache<String, String> cache = CacheInstance.getCache();
-				int currentSize = cache.keySet().size();
-				// using the size as a way to provide uniqueness to keys
-				String key = currentSize + "_" + hostname;
-				cache.put(key, name);
-				ctx.response().end("Added " + name + " to " + key);
-			}
-		});
+                final DefaultCacheManager defaultCacheManager = (DefaultCacheManager) asyncResult.result();
 
-		// Clear
-		router.get("/api/clearstuff").handler(ctx -> {
-			Cache<String, String> cache = CacheInstance.getCache();
-			cache.clear();
-			ctx.response().end("Cleared");
-		});
+                //Setting up cluster manager with infinispan
+                ClusterManager clusterManager = new InfinispanClusterManager(defaultCacheManager);
 
-		// Get Stuff
-		router.get("/api/getstuff").handler(ctx -> {
-			Cache<String, String> cache = CacheInstance.getCache();
-			StringBuilder sb = new StringBuilder();
-			Set<String> keySet = cache.keySet();
-			sb.append("VERSION " + version + " - " + hostname + " has values: ");
-			for (String key : keySet) {
-				String value = cache.get(key);
-				System.out.println("k: " + key + " v: " + value);
-				sb.append(key + "=" + value);
-				sb.append(" | ");
-			} // for
-			ctx.response().end(sb.toString());
-		});
+                VertxOptions vertxOptions = new VertxOptions()
+                    .setClusterManager(clusterManager);
 
-		// health check endpoint
-		router.get("/api/health").handler(ctx -> {
-			ctx.response().end("I'm ok");
-		});
-		vertx.createHttpServer().requestHandler(router::accept).listen(8080);
-	}
 
-	private String hello(String name) {
-		String greeting = "Hello {name} from {hostname} with {version}";
-		Map<String, String> values = new HashMap<String, String>();
-		values.put("name", name);
-		values.put("hostname", System.getenv().getOrDefault("HOSTNAME", "unknown"));
-		values.put("version", version);
-		return new StrSubstitutor(values, "{", "}").replace(greeting);
-	}
+                Vertx.clusteredVertx(vertxOptions, vertxAsyncResult -> {
+                    if (vertxAsyncResult.succeeded()) {
+
+                        Router router = Router.router(vertx);
+
+                        // Config CORS
+                        router.route().handler(CorsHandler.create("*").allowedMethod(HttpMethod.GET).allowedHeader("Content-Type"));
+
+                        // hello endpoint
+                        router.get("/api/hello/:name").handler(ctx -> {
+                            String helloMsg = hello(ctx.request().getParam("name"));
+                            log.info("New request from " + ctx.request().getHeader("User-Agent") + "\nSaying...: " + helloMsg);
+                            ctx.response().end(helloMsg);
+                        });
+
+                        // Add Stuff
+                        router.get("/api/addstuff").handler(ctx -> {
+                            String name = ctx.request().getParam("name");
+                            if (name == null) {
+                                ctx.response().end("Missing name parameter");
+                            } else {
+                                Cache<String, String> cache = defaultCacheManager.getCache(CACHE_NAME);
+                                int currentSize = cache.keySet().size();
+                                // using the size as a way to provide uniqueness to keys
+                                //TODO - can we not use System.currentime millis or UUID for this ??
+                                String key = currentSize + "_" + hostname;
+                                cache.put(key, name);
+                                ctx.response().end("Added " + name + " to " + key);
+                            }
+                        });
+
+                        // Clear
+                        router.get("/api/clearstuff").handler(ctx -> {
+                            Cache<String, String> cache = defaultCacheManager.getCache(CACHE_NAME);
+                            cache.clear();
+                            ctx.response().end("Cleared");
+                        });
+
+                        // Get Stuff
+                        router.get("/api/getstuff").handler(ctx -> {
+                            Cache<String, String> cache = defaultCacheManager.getCache(CACHE_NAME);
+                            Map<String, Object> helloWorldCacheValues = cache.entrySet().stream()
+                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                            JsonObject jsonObject = new JsonObject(helloWorldCacheValues);
+                            ctx.response()
+                                .setStatusCode(200)
+                                .putHeader("content-type", "application/json")
+                                .end(jsonObject.encodePrettily());
+                        });
+
+                        // health check endpoint
+                        router.get("/api/health").handler(ctx -> ctx.response()
+                            .setStatusCode(200)
+                            .end());
+
+                        vertx.createHttpServer()
+                            .requestHandler(router::accept)
+                            .listen(8080, result -> {
+                                if (result.succeeded()) {
+                                    fut.complete();
+                                } else {
+                                    log.info("Unable to start HTTP Server", result.cause());
+                                    fut.fail(result.cause());
+                                }
+                            });
+
+                    } else {
+                        log.info("Error starting verticle ", vertxAsyncResult.cause());
+                        fut.fail(vertxAsyncResult.cause());
+                    }
+                });
+            } else {
+                log.info("Error starting verticle ", asyncResult.cause());
+                fut.fail(asyncResult.cause());
+            }
+        });
+
+    }
+
+    //TODO - SK can this not be made a neat JSON response using JSONObject from vertx ??
+    private String hello(String name) {
+        String greeting = "Hello {name} from {hostname} with {version}";
+        Map<String, String> values = new HashMap<>();
+        values.put("name", name);
+        values.put("hostname", System.getenv().getOrDefault("HOSTNAME", "unknown"));
+        values.put("version", version);
+        return new StrSubstitutor(values, "{", "}").replace(greeting);
+    }
 
 }
