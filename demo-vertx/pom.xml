@@ -44,7 +44,7 @@
 
     <!-- Maven plugins -->
     <fabric8-vertx-maven-plugin.projectVersion>1.0.8</fabric8-vertx-maven-plugin.projectVersion>
-    <fabric8-maven-plugin.version>3.4-SNAPSHOT</fabric8-maven-plugin.version>
+    <fabric8-maven-plugin.version>3.4.1</fabric8-maven-plugin.version>
 
   </properties>
 
