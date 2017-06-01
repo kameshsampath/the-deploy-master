@@ -5,7 +5,7 @@
 
   <jgroups transport="org.infinispan.remoting.transport.jgroups.JGroupsTransport">
     <!-- This will be tcp for local mode and kubernetes for cloud mode -->
-    <stack-file name="configurationFile" path="default-configs/default-jgroups-tcp.xml"/>
+    <stack-file name="configurationFile" path="${jgroups.stack.file}"/>
   </jgroups>
 
   <cache-container name="clustered" default-cache="__vertx.distributed.cache" statistics="true">

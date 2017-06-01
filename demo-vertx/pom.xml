@@ -44,7 +44,7 @@
 
     <!-- Maven plugins -->
     <fabric8-vertx-maven-plugin.projectVersion>1.0.8</fabric8-vertx-maven-plugin.projectVersion>
-    <fabric8-maven-plugin.version>3.4.1</fabric8-maven-plugin.version>
+    <fabric8-maven-plugin.version>3.4-SNAPSHOT</fabric8-maven-plugin.version>
 
   </properties>
 
@@ -102,12 +102,6 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Infinispan stack -->
-    <!-- dependency>
-      <groupId>org.infinispan</groupId>
-      <artifactId>infinispan-embedded</artifactId>
-    </dependency -->
-
     <dependency>
       <groupId>org.infinispan</groupId>
       <artifactId>infinispan-core</artifactId>
@@ -131,6 +125,7 @@
       <id>openshift</id>
       <properties>
         <jgroups.stack.file>default-configs/default-jgroups-kubernetes.xml</jgroups.stack.file>
+        <replicas>1</replicas>
       </properties>
       <build>
         <plugins>

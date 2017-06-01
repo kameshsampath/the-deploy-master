@@ -122,7 +122,7 @@ public class HelloworldVerticle extends AbstractVerticle {
                         });
 
                         // health check endpoint
-                        router.get("/api/health").handler(ctx -> ctx.response()
+                        router.get("/healthz").handler(ctx -> ctx.response()
                             .setStatusCode(200)
                             .end());
 
