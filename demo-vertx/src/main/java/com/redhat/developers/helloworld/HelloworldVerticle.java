@@ -29,6 +29,7 @@ import io.vertx.ext.web.handler.CorsHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.text.StrSubstitutor;
 import org.infinispan.Cache;
+import org.infinispan.health.HealthStatus;
 import org.infinispan.manager.DefaultCacheManager;
 
 import java.io.IOException;
@@ -122,9 +123,22 @@ public class HelloworldVerticle extends AbstractVerticle {
                         });
 
                         // health check endpoint
-                        router.get("/healthz").handler(ctx -> ctx.response()
-                            .setStatusCode(200)
-                            .end());
+                        router.get("/healthz").handler(ctx -> {
+                            HealthStatus healthStatus = defaultCacheManager.getHealth()
+                                .getClusterHealth().getHealthStatus();
+
+                            if (healthStatus == HealthStatus.HEALTHY) {
+                                log.info("HEALTHY");
+                                ctx.response()
+                                    .setStatusCode(200)
+                                    .end();
+                            }
+
+                            ctx.response()
+                                .setStatusCode(503)
+                                .end();
+
+                        });
 
                         vertx.createHttpServer()
                             .requestHandler(router::accept)
